@@ -1,0 +1,65 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Create an S3 bucket with default SSE-KMS encryption,
+  enforce encryption on uploads, and monitor compliance using AWS Config.
+
+Parameters:
+  KMSKeyArn:
+    Type: String
+    Description: ARN of the AWS KMS key for S3 encryption.
+
+Resources:
+  EncryptedS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      #BucketName: !Sub 'secure-bucket-`${AWS::AccountId}-${AWS::Region}'
+      BucketName: !Sub 'kaps-bucket-01010101' 
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref KMSKeyArn
+            BucketKeyEnabled: true
+      AccessControl: Private
+
+  EnforceSSEKMSPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref EncryptedS3Bucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyUnencryptedUploads
+            Effect: Deny
+            Principal: "*"
+            Action: s3:PutObject
+            Resource: !Sub '${EncryptedS3Bucket.Arn}/*'
+            Condition:
+              StringNotEquals:
+                s3:x-amz-server-side-encryption: aws:kms
+
+  S3DefaultEncryptionKMSRule:
+    Type: AWS::Config::ConfigRule
+    Properties:
+      ConfigRuleName: s3-default-encryption-kms
+      Description: Checks if S3 buckets are encrypted using AWS KMS.
+      Source:
+        Owner: AWS
+        SourceIdentifier: S3_DEFAULT_ENCRYPTION_KMS
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::S3::Bucket
+      InputParameters:
+        kmsKeyArns: !Ref KMSKeyArn
+
+  S3BucketSSEEnabledRule:
+    Type: AWS::Config::ConfigRule
+    Properties:
+      ConfigRuleName: s3-bucket-server-side-encryption-enabled
+      Description: Ensures S3 buckets have server-side encryption enabled.
+      Source:
+        Owner: AWS
+        SourceIdentifier: S3_BUCKET_SERVER_SIDE_ENCRYPTION_ENABLED
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::S3::Bucket`
